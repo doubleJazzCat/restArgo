@@ -49,7 +49,7 @@ cd restArgo
 复制配置文件模版：
 
 ```bash
-cp config-temple.php config.php
+cp config-sample.php config.php
 ```
 
 然后编辑 config.php 修改默认密码（推荐）。
@@ -65,7 +65,7 @@ chmod -R 777 data
 ```text
 /restArgo/
 ├── api.php
-├── config-temple.php  # 配置文件模版
+├── config-sample.php  # 配置文件模版
 ├── config.php         # 实际配置文件 (手动复制)
 ├── index.php
 ├── data/              # 数据存储目录 (程序自动生成)
