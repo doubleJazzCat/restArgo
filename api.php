@@ -16,14 +16,12 @@ register_shutdown_function(function() {
     }
 });
 
-// 加载配置
 $CONFIG = [];
 if (file_exists('config.php')) {
     $temp = require 'config.php';
     if (is_array($temp)) $CONFIG = $temp;
 }
 
-// CORS 跨域设置
 if ($CONFIG['ALLOW_CORS'] ?? true) {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Headers: Content-Type');
@@ -32,7 +30,6 @@ if ($CONFIG['ALLOW_CORS'] ?? true) {
 }
 header('Content-Type: application/json');
 
-// 路由分发
 $action = $_GET['action'] ?? 'proxy';
 $input = json_decode(file_get_contents('php://input'), true) ?? [];
 
@@ -43,10 +40,8 @@ if ($action === 'proxy') {
         $pdo = getPDO($CONFIG);
         $dbType = strtolower($CONFIG['DB_TYPE'] ?? 'sqlite');
         
-        // 初始化数据库结构
         initDB($pdo, $dbType);
         
-        // 存储空间检查 (仅在添加数据时触发)
         if (in_array($action, ['history_add', 'collection_add', 'folder_add'])) {
             $stats = getStorageStats($pdo, $CONFIG);
             if ($stats['used'] >= $stats['limit'] && $stats['limit'] > 0) {
@@ -135,7 +130,6 @@ function handleStorageRequest($action, $pdo, $input, $config) {
                 $input['res_status']??0, $input['res_time']??0, $input['res_size']??0, $input['res_type']??'', $input['res_body']??'', 
                 $input['req_headers']??'', $input['res_headers']??'', time()
             ]);
-            // 保持最近 100 条记录，删除旧记录
             $pdo->exec("DELETE FROM history WHERE id NOT IN (SELECT id FROM (SELECT id FROM history ORDER BY id DESC LIMIT 100) AS t)");
             echo json_encode(['status' => 'ok', 'id' => $pdo->lastInsertId()]); 
             break;
@@ -181,7 +175,6 @@ function handleProxyRequest($input) {
 
     if (defined('CURLINFO_HEADER_OUT')) curl_setopt($ch, CURLINFO_HEADER_OUT, true);
 
-    // 收集响应头
     $resHeaderList = [];
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$resHeaderList) {
         $h = trim($header); 
@@ -218,14 +211,12 @@ function handleProxyRequest($input) {
 function initDB($pdo, $type) {
     $id = ($type==='mysql') ? "INT AUTO_INCREMENT PRIMARY KEY" : (($type==='pgsql') ? "SERIAL PRIMARY KEY" : "INTEGER PRIMARY KEY AUTOINCREMENT");
     
-    // 确保表结构包含所有最新字段
     $commonFields = "name VARCHAR(255), method VARCHAR(10), url TEXT, req_data TEXT, res_status INTEGER, res_time INTEGER, res_size INTEGER, res_type VARCHAR(100), res_body TEXT, req_headers TEXT, res_headers TEXT, created_at INTEGER";
     
     $pdo->exec("CREATE TABLE IF NOT EXISTS folders (id $id, parent_id INTEGER DEFAULT 0, name VARCHAR(255), created_at INTEGER)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS history (id $id, method VARCHAR(10), url TEXT, req_data TEXT, res_status INTEGER, res_time INTEGER, res_size INTEGER, res_type VARCHAR(100), res_body TEXT, req_headers TEXT, res_headers TEXT, created_at INTEGER)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS collections (id $id, folder_id INTEGER DEFAULT 0, $commonFields)");
 
-    // 兼容性检查：如果旧数据库缺少字段，自动补全 (主要针对 SQLite)
     if ($type === 'sqlite') {
         $cols = $pdo->query("PRAGMA table_info(history)")->fetchAll(PDO::FETCH_ASSOC);
         $hasReq = false; 
@@ -260,7 +251,6 @@ function getPDO($config) {
     if($type==='mysql') return new PDO("mysql:host={$config['DB_HOST']};port={$config['DB_PORT']};dbname={$config['DB_NAME']};charset=utf8mb4",$config['DB_USER'],$config['DB_PASS'],$opt); 
     if($type==='pgsql') return new PDO("pgsql:host={$config['DB_HOST']};port={$config['DB_PORT']};dbname={$config['DB_NAME']}",$config['DB_USER'],$config['DB_PASS'],$opt); 
     
-    // Default SQLite
     $path = $config['DB_PATH'] ?? (__DIR__.'/data/data.db'); 
     if(!is_dir(dirname($path))) @mkdir(dirname($path), 0777, true); 
     return new PDO("sqlite:$path", null, null, $opt); 
@@ -298,4 +288,3 @@ function getStorageStats($pdo, $config) {
         'limit_str'=>$str
     ]; 
 }
-?>

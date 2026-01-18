@@ -1,13 +1,10 @@
-# --- 操作系统文件 ---
+# 系统文件
 .DS_Store
 Thumbs.db
 
-# --- 敏感配置 ---
-# 忽略实际运行的配置文件，只提交 config-sample.php
+# 敏感配置
 config.php
 
-# --- 数据存储 ---
-# 忽略 data 目录下所有内容 (如 data.db)
+# 数据存储 (保留目录结构，忽略数据文件)
 /data/*
-# 但保留 data 目录本身 (需要手动在 data 目录下建一个空的 .gitkeep 文件)
 !/data/.gitkeep

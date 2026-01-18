@@ -2,12 +2,10 @@
 /**
  * restArgo Frontend
  * 基于 Vue 3 的单页应用入口
- * 处理用户认证与页面渲染
  */
 error_reporting(0);
 session_start();
 
-// 加载配置
 $CONFIG = [];
 if (file_exists('config.php')) {
     $temp = require 'config.php';
@@ -16,14 +14,11 @@ if (file_exists('config.php')) {
 
 $UI_PASS = $CONFIG['UI_ACCESS_PASSWORD'] ?? '';
 $BASE_URL = $CONFIG['BASE_URL'] ?? '';
-// 确保 BASE_URL 以 / 结尾
 if (!empty($BASE_URL) && substr($BASE_URL, -1) !== '/') $BASE_URL .= '/';
 
-// 简单的访问控制锁
 if (!empty($UI_PASS)) {
     if (isset($_POST['unlock_pass']) && $_POST['unlock_pass'] === $UI_PASS) {
         $_SESSION['restargo_unlocked'] = true;
-        // 登录成功后跳转：优先使用配置的 BASE_URL 以兼容反向代理，否则使用当前路径
         $redirectUrl = !empty($BASE_URL) ? $BASE_URL : $_SERVER['PHP_SELF'];
         header("Location: " . $redirectUrl); 
         exit;
@@ -270,8 +265,36 @@ createApp({
             try { return JSON.parse(text); } catch(e) { return { error: 'Invalid JSON Response: ' + text.substring(0, 100) }; }
         };
 
-        const fetchData = async () => { try { const [fData, cData] = await Promise.all([apiCall('folder_list'), apiCall('collection_list')]); if(Array.isArray(fData)) folders.value = fData; if(Array.isArray(cData)) collections.value = cData.map(i => ({...i, fullReq: JSON.parse(i.req_data || '{}')})); nextTick(() => initSortable()); fetchStorageStats(); } catch(e) {} };
-        const fetchHistory = async () => { try { const data = await apiCall('history_list'); if(Array.isArray(data)) history.value = data.map(i => ({...i, fullReq: JSON.parse(i.req_data || '{}')})); } catch(e){} };
+        const fetchData = async () => { 
+            try { 
+                const [fData, cData] = await Promise.all([apiCall('folder_list'), apiCall('collection_list')]); 
+                if(Array.isArray(fData)) folders.value = fData; 
+                if(Array.isArray(cData)) collections.value = cData.map(i => {
+                    let fullReq = {};
+                    try { fullReq = JSON.parse(i.req_data || '{}'); } catch(e) {}
+                    return {...i, fullReq};
+                }); 
+                nextTick(() => initSortable()); 
+                fetchStorageStats(); 
+            } catch(e) {} 
+        };
+
+        const fetchHistory = async () => { 
+            try { 
+                const data = await apiCall('history_list'); 
+                if(Array.isArray(data)) {
+                    // 容错: 过滤掉损坏的历史记录数据
+                    history.value = data.reduce((acc, i) => {
+                        try {
+                            const fullReq = JSON.parse(i.req_data || '{}');
+                            acc.push({...i, fullReq});
+                        } catch(e) { }
+                        return acc;
+                    }, []);
+                }
+            } catch(e){} 
+        };
+
         const fetchStorageStats = async () => { try { const data = await apiCall('storage_stats'); if(data.limit) storageStats.value = { used: data.used, limit: data.limit, percent: data.percent, text: `${formatSize(data.used)} / ${data.limit_str}` }; } catch(e) {} };
         
         const folderTree = computed(() => { const map = {}; const roots = []; folders.value.forEach(f => { map[f.id] = { ...f, isFolder: true, children: [], uniqueKey: 'f-'+f.id }; }); folders.value.forEach(f => { if (f.parent_id && map[f.parent_id]) { map[f.parent_id].children.push(map[f.id]); } else { roots.push(map[f.id]); } }); collections.value.forEach(c => { const item = { ...c, isFolder: false, uniqueKey: 'c-'+c.id }; if (c.folder_id && map[c.folder_id]) { map[c.folder_id].children.push(item); } else { roots.push(item); } }); return roots; });
@@ -301,7 +324,17 @@ createApp({
         };
 
         const loadRequest = (item) => { 
-            req.value = JSON.parse(JSON.stringify(item.fullReq)); 
+            let loaded = {};
+            try { loaded = JSON.parse(JSON.stringify(item.fullReq || {})); } catch (e) {}
+            // 补全缺失字段，防止 UI 渲染报错
+            if (!Array.isArray(loaded.params)) loaded.params = [{key:'',value:''}];
+            if (!Array.isArray(loaded.headers)) loaded.headers = [{key:'',value:''}];
+            if (!Array.isArray(loaded.formData)) loaded.formData = [{key:'',value:''}];
+            if (!loaded.method) loaded.method = 'GET';
+            if (!loaded.url) loaded.url = '';
+            
+            req.value = loaded;
+            
             if (item.res_status) { res.value = { status: item.res_status, time: item.res_time, size: item.res_size, contentType: item.res_type, body: item.res_body, isBase64: true, reqHeaders: item.req_headers, resHeaders: item.res_headers }; } else { res.value = {}; }
         };
 
