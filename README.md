@@ -41,7 +41,7 @@ A PHP-based Web API debugging tool.
 直接克隆仓库到你的 Web 服务器目录：
 
 ```bash
-git clone [https://github.com/doubleJazzCat/restArgo.git](https://github.com/doubleJazzCat/restArgo.git)
+git clone https://github.com/doubleJazzCat/restArgo.git
 cd restArgo
 ```
 
