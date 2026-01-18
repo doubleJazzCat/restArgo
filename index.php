@@ -1,22 +1,32 @@
 <?php
-// restArgo v1.10 Frontend
-// Fix: UI Input Borders (Gray default, Black focus)
+/**
+ * restArgo Frontend
+ * 基于 Vue 3 的单页应用入口
+ * 处理用户认证与页面渲染
+ */
 error_reporting(0);
 session_start();
 
+// 加载配置
 $CONFIG = [];
 if (file_exists('config.php')) {
     $temp = require 'config.php';
     if (is_array($temp)) $CONFIG = $temp;
 }
+
 $UI_PASS = $CONFIG['UI_ACCESS_PASSWORD'] ?? '';
 $BASE_URL = $CONFIG['BASE_URL'] ?? '';
+// 确保 BASE_URL 以 / 结尾
 if (!empty($BASE_URL) && substr($BASE_URL, -1) !== '/') $BASE_URL .= '/';
 
+// 简单的访问控制锁
 if (!empty($UI_PASS)) {
     if (isset($_POST['unlock_pass']) && $_POST['unlock_pass'] === $UI_PASS) {
         $_SESSION['restargo_unlocked'] = true;
-        header("Location: " . $_SERVER['PHP_SELF']); exit;
+        // 登录成功后跳转：优先使用配置的 BASE_URL 以兼容反向代理，否则使用当前路径
+        $redirectUrl = !empty($BASE_URL) ? $BASE_URL : $_SERVER['PHP_SELF'];
+        header("Location: " . $redirectUrl); 
+        exit;
     }
     if (!isset($_SESSION['restargo_unlocked'])) {
         ?>
@@ -52,7 +62,6 @@ if (!empty($UI_PASS)) {
         ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
         .sortable-ghost { opacity: 0.4; background-color: #e5e7eb; }
         .folder-drag-over { background-color: #dbeafe; border: 1px dashed #3b82f6; }
-        /* 通用输入框样式修复 */
         input:focus, select:focus, textarea:focus { outline: none; }
     </style>
 </head>
@@ -94,7 +103,6 @@ if (!empty($UI_PASS)) {
             <button @click="sidebarTab='collections'" :class="sidebarTab==='collections' ? 'sidebar-tab-active' : 'sidebar-tab-inactive'" class="flex-1 p-3 text-xs transition-colors">Saved</button>
         </div>
         <div class="flex-1 overflow-y-auto bg-gray-50">
-            
             <div v-if="sidebarTab==='history'" class="p-0">
                  <div v-if="history.length===0" class="p-4 text-xs text-center text-gray-500">No history yet.</div>
                  <div v-for="(item, idx) in history" :key="item.id || idx" class="p-3 border-b border-gray-200 bg-white group relative">
@@ -238,10 +246,8 @@ createApp({
     components: { 'tree-item': TreeItem },
     directives: { focus: { mounted: (el) => el.focus() } },
     setup() {
-        const serverConfig = { defaultUrl: "api.php" }; 
-        const config = ref({ apiUrl: '' }); 
-        
-        const folders = ref([]); const collections = ref([]); const history = ref([]); const storageStats = ref({ used: 0, limit: 0, percent: 0, text: 'Loading...' });
+        const folders = ref([]); const collections = ref([]); const history = ref([]); 
+        const storageStats = ref({ used: 0, limit: 0, percent: 0, text: 'Loading...' });
         const sidebarTab = ref('history'); const activeTab = ref('Params'); 
         const resMode = ref('Raw'); const bodyType = ref('raw'); const loading = ref(false);
         const req = ref({ method: 'GET', url: '', params: [{key:'',value:''}], headers: [{key:'',value:''}], body: '', formData: [{key:'',value:''}], timeout: 60 });
@@ -256,8 +262,7 @@ createApp({
         const formatSize = (bytes) => { if (!bytes) return '0 B'; const k = 1024; const sizes = ['B', 'KB', 'MB', 'GB']; const i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]; };
 
         const apiCall = async (action, data = {}, method = 'GET') => {
-            const targetUrl = config.value.apiUrl || serverConfig.defaultUrl;
-            const url = `${targetUrl}?action=${action}${method === 'DELETE' ? '&id='+data.id : ''}`;
+            const url = `api.php?action=${action}${method === 'DELETE' ? '&id='+data.id : ''}`;
             const opts = { method: method, headers: { 'Content-Type': 'application/json' } };
             if (method === 'POST') opts.body = JSON.stringify(data);
             const r = await fetch(url, opts);
@@ -268,6 +273,7 @@ createApp({
         const fetchData = async () => { try { const [fData, cData] = await Promise.all([apiCall('folder_list'), apiCall('collection_list')]); if(Array.isArray(fData)) folders.value = fData; if(Array.isArray(cData)) collections.value = cData.map(i => ({...i, fullReq: JSON.parse(i.req_data || '{}')})); nextTick(() => initSortable()); fetchStorageStats(); } catch(e) {} };
         const fetchHistory = async () => { try { const data = await apiCall('history_list'); if(Array.isArray(data)) history.value = data.map(i => ({...i, fullReq: JSON.parse(i.req_data || '{}')})); } catch(e){} };
         const fetchStorageStats = async () => { try { const data = await apiCall('storage_stats'); if(data.limit) storageStats.value = { used: data.used, limit: data.limit, percent: data.percent, text: `${formatSize(data.used)} / ${data.limit_str}` }; } catch(e) {} };
+        
         const folderTree = computed(() => { const map = {}; const roots = []; folders.value.forEach(f => { map[f.id] = { ...f, isFolder: true, children: [], uniqueKey: 'f-'+f.id }; }); folders.value.forEach(f => { if (f.parent_id && map[f.parent_id]) { map[f.parent_id].children.push(map[f.id]); } else { roots.push(map[f.id]); } }); collections.value.forEach(c => { const item = { ...c, isFolder: false, uniqueKey: 'c-'+c.id }; if (c.folder_id && map[c.folder_id]) { map[c.folder_id].children.push(item); } else { roots.push(item); } }); return roots; });
         const initSortable = () => { if (typeof Sortable === 'undefined') return; const containers = document.querySelectorAll('.sortable-list, [data-id="0"]'); containers.forEach(el => { if(el._sortable) return; new Sortable(el, { group: 'nested', animation: 150, fallbackOnBody: true, swapThreshold: 0.65, onEnd: async (evt) => { const type = evt.item.getAttribute('data-type'); const id = evt.item.getAttribute('data-id'); const targetId = evt.to.getAttribute('data-id'); await apiCall('item_move', { type, id, target_id: targetId }, 'POST'); fetchData(); } }); el._sortable = true; }); };
 
@@ -299,11 +305,23 @@ createApp({
             if (item.res_status) { res.value = { status: item.res_status, time: item.res_time, size: item.res_size, contentType: item.res_type, body: item.res_body, isBase64: true, reqHeaders: item.req_headers, resHeaders: item.res_headers }; } else { res.value = {}; }
         };
 
+        const confirmCreate = async (name) => { 
+            if (!name || !name.trim()) return cancelCreate(); 
+            const pid = creatingFolderId.value; 
+            creatingFolderId.value = null;
+            const tempId = 'temp-' + Date.now();
+            folders.value.push({ id: tempId, name: name.trim(), parent_id: pid, created_at: Math.floor(Date.now()/1000) });
+            await apiCall('folder_add', { name: name.trim(), parent_id: pid }, 'POST'); 
+            fetchData(); 
+        };
+
         const confirmDeleteFolder = async (mode) => { const id = deleteModal.value.id; folders.value = folders.value.filter(f => f.id !== id); await apiCall('folder_delete', { id, mode }, 'POST'); deleteModal.value.show = false; fetchData(); };
         const deleteCollection = async (id) => { collections.value = collections.value.filter(c => c.id !== id); await apiCall('collection_delete', {id}, 'DELETE'); };
         const deleteHistory = async (id) => { history.value = history.value.filter(h => h.id !== id); await apiCall('history_delete', {id}, 'DELETE'); };
-        const startCreate = (parentId) => { creatingFolderId.value = parentId; }; const cancelCreate = () => { creatingFolderId.value = null; };
-        const confirmCreate = async (name) => { if (!name || !name.trim()) return cancelCreate(); const pid = creatingFolderId.value; creatingFolderId.value = null; await apiCall('folder_add', { name: name.trim(), parent_id: pid }, 'POST'); fetchData(); };
+        
+        const startCreate = (parentId) => { creatingFolderId.value = parentId; }; 
+        const cancelCreate = () => { creatingFolderId.value = null; };
+        
         const openSaveModal = () => { saveForm.value = { name: '', folderId: 0 }; showSaveModal.value = true; };
         const promptDeleteFolder = (folder) => { deleteModal.value = { show: true, id: folder.id, name: folder.name }; };
         const clearHistory = async () => { if(confirm('Clear all?')) { history.value = []; await apiCall('history_clear', {}, 'POST'); } };
@@ -328,7 +346,6 @@ createApp({
         });
 
         return { 
-            config, 
             sidebarTab, activeTab, resMode, bodyType, loading, 
             req, res, history, collections, authType, authToken, authUser, authPass,
             sendRequest, loadRequest, updateUrlFromParams, onUrlChange, addItem, removeItem, deleteHistory, clearHistory,

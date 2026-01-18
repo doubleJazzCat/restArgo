@@ -1,0 +1,14 @@
+# --- 版本控制与元数据 ---
+.git
+.gitignore
+
+# --- 本地敏感数据 ---
+# 防止本地数据库和配置文件打包进镜像
+data/
+config.php
+
+# --- 构建与文档 ---
+# 运行容器不需要这些文件
+docker-compose.yml
+README.md
+LICENSE

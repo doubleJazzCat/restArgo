@@ -1,0 +1,18 @@
+services:
+  restargo:
+    build: .
+    container_name: restargo
+    # 除非手动停止，否则自动重启
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      # 持久化数据目录
+      - ./data:/var/www/html/data
+    environment:
+      # 基础路径 (如反向代理到子目录时需设置，例如 /argo/)
+      - RESTARGO_BASE_URL=
+      # 访问密码
+      - RESTARGO_UI_PASS=argo
+      # 数据库类型 (默认 sqlite)
+      - RESTARGO_DB_TYPE=sqlite
